@@ -7,49 +7,54 @@ import (
 )
 
 type ClientManager struct {
-	conns sync.Map
+	conns map[uint][]*websocket.Conn
 	mu    sync.Mutex
+}
+
+func NewClientManager() *ClientManager {
+	return &ClientManager{conns: make(map[uint][]*websocket.Conn)}
 }
 
 func (cm *ClientManager) AddConnection(userID uint, conn *websocket.Conn) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	connections, ok := cm.conns.Load(userID)
+	connections, ok := cm.conns[userID]
 	if !ok {
-		cm.conns.Store(userID, []*websocket.Conn{conn})
+		cm.conns[userID] = []*websocket.Conn{conn}
 		return
 	}
-	newConnections := append(connections.([]*websocket.Conn), conn)
-	cm.conns.Store(userID, newConnections)
+	connections = append(connections, conn)
+	cm.conns[userID] = connections
 }
 
 func (cm *ClientManager) RemoveConnection(userID uint, conn *websocket.Conn) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	connections, ok := cm.conns.Load(userID)
+	connections, ok := cm.conns[userID]
 	if !ok {
 		return
 	}
-	updatedConnections := connections.([]*websocket.Conn)
-	for index, storedConn := range updatedConnections {
+	for index, storedConn := range connections {
 		if storedConn == conn {
-			updatedConnections[index] = updatedConnections[len(updatedConnections)-1]
-			updatedConnections = updatedConnections[:len(updatedConnections)-1]
+			connections[index] = connections[len(connections)-1]
+			connections = connections[:len(connections)-1]
 		}
 	}
-	cm.conns.Store(userID, updatedConnections)
+	cm.conns[userID] = connections
 }
 
 func (cm *ClientManager) Broadcast(msg WebsocketCommand) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	cm.conns.Range(func(key, values any) bool {
-		connections := values.([]*websocket.Conn)
-		for _, conn := range connections {
+	connections := make(map[uint][]*websocket.Conn, len(cm.conns))
+	for userID, userConnections := range cm.conns {
+		connections[userID] = userConnections
+	}
+	cm.mu.Unlock()
+	for _, userIDConns := range connections {
+		for _, conn := range userIDConns {
 			if err := conn.WriteMessage(websocket.TextMessage, msg.Payload); err != nil {
 				fmt.Println("error writing message", err)
 			}
 		}
-		return true
-	})
+	}
 }

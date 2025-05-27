@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var clientManager ClientManager
+var clientManager = NewClientManager()
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
