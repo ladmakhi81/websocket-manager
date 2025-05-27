@@ -1,13 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
-	"math/rand"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -38,47 +37,52 @@ func websocketCommandsHandler(commands []WebsocketCommand) error {
 			}
 			unsubscribeCommand(payloads)
 		default:
-			return errors.New("Unknown Command Type")
+			return errors.New("unknown command")
 		}
 	}
 	return nil
 }
 
 func websocketHandler(w http.ResponseWriter, r *http.Request) {
+	userIDParam := r.Header.Get("user-id")
+	userID, err := strconv.Atoi(userIDParam)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	// Handshake
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Println("Error in http handshake", err)
+		fmt.Println("error in http handshake", err)
 		return
 	}
 
-	userID := rand.Uint64()
-	clientManager.conns.Store(userID, conn)
-	fmt.Println("Client connected", userID)
+	clientManager.AddConnection(uint(userID), conn)
+	fmt.Println("client connected", userID)
 
 	var cleanupOnce sync.Once
 	connectionClose := make(chan struct{})
 	cleanupFn := func() {
 		cleanupOnce.Do(func() {
 			close(connectionClose)
-			clientManager.conns.Delete(userID)
+			clientManager.RemoveConnection(uint(userID), conn)
 			if err := conn.Close(); err != nil {
-				fmt.Println("Error in closing websocket connection")
+				fmt.Println("error in closing websocket connection")
 			}
-			fmt.Println("Connection closed", userID)
+			fmt.Println("connection closed", userID)
 		})
 	}
 
 	// ping pong handler
 	if err := conn.SetReadDeadline(time.Now().Add(1 * time.Minute)); err != nil {
-		fmt.Println("Error setting read deadline", err)
+		fmt.Println("error setting read deadline", err)
 		return
 	}
 
 	conn.SetPongHandler(func(string) error {
 		if err := conn.SetReadDeadline(time.Now().Add(1 * time.Minute)); err != nil {
-			fmt.Println("Error setting read deadline", err)
+			fmt.Println("error setting read deadline", err)
 			return err
 		}
 		return nil
@@ -111,18 +115,18 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				break
 			}
-			fmt.Println("Error in reading message", err)
+			fmt.Println("error in reading message", err)
 			continue
 		}
 		if msgType == websocket.TextMessage {
 			var data WebsocketMessage
 			if err := json.Unmarshal(msg, &data); err != nil {
-				fmt.Println("Error in unmarshalling message", err)
+				fmt.Println("error in unmarshalling message", err)
 				continue
 			}
 			// Direct Message To Correct Command Handler
 			if err := websocketCommandsHandler(data.Commands); err != nil {
-				fmt.Println("Error in handling message", err)
+				fmt.Println("error in handling message", err)
 				continue
 			}
 		}

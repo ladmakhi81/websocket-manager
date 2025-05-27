@@ -1,12 +1,12 @@
 package main
 
 import (
-	"encoding/json"
+	jsonEncoding "encoding/json"
 	"fmt"
 )
 
 func subscribeCommand(markets []string) {
-	clientManager.Broadcast(WebsocketCommand{Type: "somethong", Payload: json.RawMessage(`{'name': "nima"}`)})
+	clientManager.Broadcast(WebsocketCommand{Type: "somethong", Payload: jsonEncoding.RawMessage(`{'name': "nima"}`)})
 	fmt.Println("Subscribing to Markets", markets)
 }
 
